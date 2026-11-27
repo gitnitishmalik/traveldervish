@@ -14,14 +14,14 @@ $SITE = 'https://travel.designdervish.com/';   // where visitors are sent back t
 
 function back($q) { global $SITE; header('Location: ' . $SITE . $q, true, 303); exit; }
 
-// Only accept forms sent from the Travel Dervish site, or its Cloudflare Pages preview address
-// (if you name the Cloudflare project something other than "travel-dervish", change it below)
+// Only accept forms sent from the Travel Dervish site or its Cloudflare preview addresses
+// (traveldervish.pages.dev, traveldervish.initishmalik.workers.dev and their preview copies)
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if ($origin !== '' && $origin !== 'null') {
     $host = (string)parse_url($origin, PHP_URL_HOST);
     $allowed = in_array($host, ['travel.designdervish.com', 'designdervish.com', 'www.designdervish.com'], true)
-               || preg_match('/^([a-z0-9-]+\.)?travel-dervish\.pages\.dev$/', $host);
-    if (!$allowed) back('contact.html');
+               || preg_match('/(^|[.-])travel-?dervish\.(pages\.dev|initishmalik\.workers\.dev)$/', $host);
+    if (!$allowed) back('contact');
 }
 function clean($v, $max = 500) {
     $v = trim((string)$v);
@@ -31,10 +31,10 @@ function clean($v, $max = 500) {
 function field($name, $max = 120) { return clean($_POST[$name] ?? '', $max); }
 function show($v) { return $v !== '' ? $v : '-'; }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') back('contact.html');
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') back('contact');
 
 // Honeypot: real visitors never fill this hidden field
-if (!empty($_POST['website'])) back('thank-you.html');
+if (!empty($_POST['website'])) back('thank-you');
 
 $name       = field('name', 120);
 $email      = field('email', 160);
@@ -59,9 +59,9 @@ $journeys = ['rajasthan' => 'Rajasthan Heritage Tour (16D/15N)', 'thailand' => '
 $trips    = ['return' => 'Round trip', 'oneway' => 'One way', 'multicity' => 'Multi-city'];
 $journeyLabel = $journeys[$journey] ?? ($journey !== '' ? $journey : 'Not specified');
 
-$pages = ['rajasthan' => 'rajasthan-heritage-tour.html?error=1#enquire', 'thailand' => 'thailand-holiday-package.html?error=1#enquire',
-          'flights' => 'flights.html?error=1#request'];
-$back = $pages[$pageFrom] ?? 'contact.html?error=1#form';
+$pages = ['rajasthan' => 'rajasthan-heritage-tour?error=1#enquire', 'thailand' => 'thailand-holiday-package?error=1#enquire',
+          'flights' => 'flights?error=1#request'];
+$back = $pages[$pageFrom] ?? 'contact?error=1#form';
 
 if ($name === '' || $phone === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) back($back);
 if ($service === 'flight' && ($from === '' || $to === '')) back($back);
@@ -100,4 +100,4 @@ $headers .= "MIME-Version: 1.0\r\n";
 $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
 
 $ok = @mail($TO, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers, '-f' . $FROM);
-back($ok ? 'thank-you.html' : $back);
+back($ok ? 'thank-you' : $back);

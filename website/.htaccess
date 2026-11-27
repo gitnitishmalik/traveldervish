@@ -3,11 +3,17 @@ DirectoryIndex index.html
 Options -Indexes
 ErrorDocument 404 /404.html
 
+RewriteEngine On
 # Force HTTPS: turn on AFTER the SSL certificate for travel.designdervish.com is active
 # (or simply use hPanel > Security > SSL > "Force HTTPS")
-# RewriteEngine On
 # RewriteCond %{HTTPS} off
 # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Clean addresses: /about serves about.html (the site links without ".html", as on Cloudflare)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.+)$ $1.html [L]
 
 <IfModule mod_mime.c>
   AddType image/webp .webp

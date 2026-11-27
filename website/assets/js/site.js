@@ -381,7 +381,7 @@ var pre = function (e) {
 var a = e.target.closest && e.target.closest('a[href]');
 if (!a || a.target === '_blank' || a.hasAttribute('download') || a.origin !== location.origin) return;
 var url = a.href.split('#')[0];
-if (fetched[url] || url === location.href.split('#')[0] || !/\.html(\?|$)/.test(url)) return;
+if (fetched[url] || url === location.href.split('#')[0] || a.pathname.indexOf('/assets/') === 0) return;
 fetched[url] = 1;
 var l = document.createElement('link'); l.rel = 'prefetch'; l.href = url; document.head.appendChild(l);
 };
@@ -421,8 +421,8 @@ if (form.elements.month.value) q.set('month', form.elements.month.value);
 if (form.elements.travellers.value) q.set('travellers', form.elements.travellers.value);
 var page = opt && opt.getAttribute('data-page');
 if (page) { window.location.href = page + '?' + q.toString() + '#enquire'; return; }
-if (sel.value === 'custom') { q.set('journey', 'custom'); window.location.href = 'contact.html?' + q.toString() + '#form'; return; }
-window.location.href = 'journeys.html' + (scope() ? '?type=' + scope() : '');
+if (sel.value === 'custom') { q.set('journey', 'custom'); window.location.href = 'contact?' + q.toString() + '#form'; return; }
+window.location.href = 'journeys' + (scope() ? '?type=' + scope() : '');
 });
 });
 var today = new Date(); today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
@@ -592,7 +592,7 @@ $$('[data-reveal]').forEach(function (el) { el.classList.add('is-visible'); });
 }
 var t = params.get('type');
 if (t) {
-var match = $$('.nav__link, .m-link').filter(function (a) { return a.getAttribute('href') === 'journeys.html?type=' + t; });
+var match = $$('.nav__link, .m-link').filter(function (a) { return a.getAttribute('href') === 'journeys?type=' + t; });
 if (match.length) {
 $$('.nav__link, .m-link').forEach(function (a) { a.classList.remove('is-active'); });
 match.forEach(function (a) { a.classList.add('is-active'); });

@@ -323,7 +323,7 @@ def lcp_preload(body):
     return f'<link rel="preload" as="image" href="{src}"{extra} fetchpriority="high">'
 
 # Chrome/Edge: fetch and pre-render the next page as soon as a link is hovered (or pressed on touch), so clicks open instantly
-_SPEC_WHERE = {"and": [{"or": [{"href_matches": "/*.html"}, {"href_matches": r"/*.html\?*"}, {"href_matches": "/"}]},
+_SPEC_WHERE = {"and": [{"href_matches": "/*"}, {"not": {"href_matches": "/assets/*"}},
                        {"not": {"selector_matches": "[download], [target=_blank]"}}]}
 SPECULATION = ('<script type="speculationrules">' + json.dumps({"prefetch": [{"where": _SPEC_WHERE, "eagerness": "moderate"}],
                "prerender": [{"where": _SPEC_WHERE, "eagerness": "moderate"}]}) + '</script>')
@@ -331,8 +331,13 @@ SPECULATION = ('<script type="speculationrules">' + json.dumps({"prefetch": [{"w
 FONT_PRELOAD = "".join(f'<link rel="preload" href="assets/fonts/{f}.woff2" as="font" type="font/woff2" crossorigin>'
                        for f in ("boska-500", "boska-500i", "amulya-400", "bespoke-stencil-500"))
 
+def clean_links(doc):
+    """index.html -> /, about.html -> about, journeys.html?type=india -> journeys?type=india (links, forms, data-page)."""
+    doc = _re.sub(r'(href|action|data-page)="index\.html(?=["#?])', r'\1="/', doc)
+    return _re.sub(r'(href|action|data-page)="([a-z0-9-]+)\.html(?=["#?])', r'\1="\2', doc)
+
 def page(fname, title, desc, body, active="", overlay=True, og="poster-desert", jsonld=None, lightbox=False, datalist=False):
-    canon = SITE["url"] + "/" + ("" if fname == "index.html" else fname)
+    canon = SITE["url"] + "/" + ("" if fname == "index.html" else fname.removesuffix(".html"))
     ld = f'<script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>' if jsonld else ""
     wa_attr = f' data-wa="{SITE["whatsapp"]}"' if WA_ON else ""
     doc = f'''<!doctype html>
@@ -379,6 +384,9 @@ def page(fname, title, desc, body, active="", overlay=True, og="poster-desert", 
 </body>
 </html>
 '''
+    doc = clean_links(doc)
+    if fname == "404.html":   # the 404 page is shown at any address, so its relative links must start from the site root
+        doc = doc.replace("<head>", '<head>\n<base href="/">', 1)
     used = set(_re.findall(r'#i-([\w-]+)', doc)) | (SCRIPT_ICONS if "data-flow" in doc else set())
     doc = doc.replace("@@SPRITE@@", sprite(used))
     with open(os.path.join(OUT, fname), "w", encoding="utf-8", newline="\n") as f:
@@ -1140,7 +1148,7 @@ def build_misc():
 <div class="btns btns--center"><a href="index.html" class="btn btn--sun">{icon("arrow-left", "i i--sm")} Back to home</a><a href="journeys.html" class="btn btn--line">See holidays</a></div>''')
 
 def build_extras():
-    pages = ["", "journeys.html", "flights.html", "rajasthan-heritage-tour.html", "thailand-holiday-package.html", "about.html", "contact.html"]
+    pages = ["", "journeys", "flights", "rajasthan-heritage-tour", "thailand-holiday-package", "about", "contact"]
     sm = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + \
          "".join(f"  <url><loc>{SITE['url']}/{u}</loc></url>\n" for u in pages) + "</urlset>\n"
     open(os.path.join(OUT, "sitemap.xml"), "w", encoding="utf-8", newline="\n").write(sm)
