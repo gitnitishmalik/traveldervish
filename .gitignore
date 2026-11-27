@@ -1,0 +1,19 @@
+# Built zips (Cloudflare deploys straight from the website/ folder)
+*.zip
+
+# Source drafts and raw material that the live site doesn't need
+design/
+_flow/videos/
+_builder/unused-assets/
+Rajasthan Tour.pdf
+THAILAND HOLIDAY PACKAGE.pdf
+
+# Full original font files (the site uses trimmed copies in website/assets/fonts; fetch_assets.py re-downloads these)
+_builder/fonts-src/
+
+# Python / OS clutter
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+desktop.ini
