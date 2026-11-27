@@ -1,0 +1,5 @@
+# Keeps the mailer's error log private (it is only for you, in File Manager)
+Options -Indexes
+<Files "mail-errors.log">
+  Require all denied
+</Files>

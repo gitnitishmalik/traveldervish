@@ -1,21 +1,29 @@
 <?php
 /**
  * Travel Dervish: enquiry form handler (Hostinger shared hosting, PHP 7.4+)
- * The website itself is on Cloudflare Pages, which can't run PHP, so this one file stays on Hostinger:
- * upload it to  public_html/travel-forms/send-enquiry.php  ->  https://designdervish.com/travel-forms/send-enquiry.php
+ * The website is on Cloudflare Pages, which can't run PHP, so this file stays on Hostinger:
+ *   public_html/travel-forms/send-enquiry.php  ->  https://designdervish.com/travel-forms/send-enquiry.php
  * Handles holiday-package, flight-ticket and flight + holiday enquiries.
- * 1) $TO is the mailbox that receives enquiries.
- * 2) $FROM must be an address on your own domain (Hostinger requires the sender to be on a domain you host).
+ *
+ * HOW EMAILS ARE SENT
+ * designdervish.com email runs on Google Workspace, so enquiries are sent THROUGH GMAIL:
+ *   1) In the Google account below, turn on 2-Step Verification (myaccount.google.com/security).
+ *   2) Create an App Password: myaccount.google.com/apppasswords  (name it "Travel website").
+ *   3) Paste the 16-letter password between the quotes in $SMTP_PASS below and save.
+ * If $SMTP_PASS is empty, the server's own mail() is tried instead (often blocked or sent to Spam).
+ * Any sending problem is written to mail-errors.log in this folder (open it in File Manager).
  */
-$TO   = 'travel@designdervish.com';      // inbox that receives enquiries
-$FROM = 'no-reply@designdervish.com';    // an address on your domain
+$TO        = 'travel@designdervish.com';     // inbox that receives enquiries
+$SMTP_USER = 'travel@designdervish.com';     // Google Workspace account that sends them (log-in email)
+$SMTP_PASS = '';                             // its 16-letter App Password (spaces are fine)
+$FROM      = 'no-reply@designdervish.com';   // sender used only by the mail() fallback
 $SUBJECT_PREFIX = 'New enquiry';
-$SITE = 'https://travel.designdervish.com/';   // where visitors are sent back to
+$SITE = 'https://travel.designdervish.com/';  // where visitors are sent back to
 
 function back($q) { global $SITE; header('Location: ' . $SITE . $q, true, 303); exit; }
+function logf($msg) { @file_put_contents(__DIR__ . '/mail-errors.log', date('c') . '  ' . $msg . "\n", FILE_APPEND | LOCK_EX); }
 
 // Only accept forms sent from the Travel Dervish site or its Cloudflare preview addresses
-// (traveldervish.pages.dev, traveldervish.initishmalik.workers.dev and their preview copies)
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if ($origin !== '' && $origin !== 'null') {
     $host = (string)parse_url($origin, PHP_URL_HOST);
@@ -30,6 +38,7 @@ function clean($v, $max = 500) {
 }
 function field($name, $max = 120) { return clean($_POST[$name] ?? '', $max); }
 function show($v) { return $v !== '' ? $v : '-'; }
+function hdr($text) { return '=?UTF-8?B?' . base64_encode($text) . '?='; }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') back('contact');
 
@@ -90,14 +99,87 @@ if ($service !== 'package') {
 }
 $body .= "\nSent from:    " . show($pageFrom) . " page\n\n";
 $body .= "Message:\n" . show($message) . "\n";
+$body = str_replace("\n", "\r\n", $body);
 
 $what = ($service === 'flight') ? "Flights $from to $to" : $journeyLabel;
 if ($service === 'both') $what .= ' + flights';
 $subject = "$SUBJECT_PREFIX: $what - $name";
-$headers  = "From: Travel Dervish Website <$FROM>\r\n";
-$headers .= "Reply-To: $name <$email>\r\n";
-$headers .= "MIME-Version: 1.0\r\n";
-$headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+$encodedBody = rtrim(chunk_split(base64_encode($body), 76, "\r\n"));
 
-$ok = @mail($TO, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers, '-f' . $FROM);
-back($ok ? 'thank-you' : $back);
+/** Sends through Gmail (smtp.gmail.com, TLS + App Password). Returns true or an error text. */
+function smtp_send($user, $pass, $to, $data) {
+    $attempts = [['tcp://smtp.gmail.com:587', true], ['ssl://smtp.gmail.com:465', false]];
+    $last = 'no connection';
+    foreach ($attempts as [$addr, $starttls]) {
+        $fp = @stream_socket_client($addr, $errno, $errstr, 20);
+        if (!$fp) { $last = "connect $addr failed: $errstr"; continue; }
+        stream_set_timeout($fp, 25);
+        $read = function () use ($fp) {
+            $resp = '';
+            while (($line = fgets($fp, 515)) !== false) { $resp .= $line; if (strlen($line) < 4 || $line[3] === ' ') break; }
+            return $resp;
+        };
+        // $label is what the log shows for this step: never the username/password or the message itself
+        $cmd = function ($c, $codes, $label = null) use ($fp, $read) {
+            if ($c !== null) fwrite($fp, $c . "\r\n");
+            $r = $read();
+            if (!in_array((int)substr($r, 0, 3), (array)$codes, true)) {
+                throw new Exception(($label ?? ($c ?? 'greeting')) . ' -> ' . trim($r));
+            }
+            return $r;
+        };
+        try {
+            $cmd(null, 220);
+            $cmd('EHLO travel.designdervish.com', 250);
+            if ($starttls) {
+                $cmd('STARTTLS', 220);
+                if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) throw new Exception('TLS start failed');
+                $cmd('EHLO travel.designdervish.com', 250);
+            }
+            $cmd('AUTH LOGIN', 334);
+            $cmd(base64_encode($user), 334, 'username');
+            $cmd(base64_encode(str_replace(' ', '', $pass)), 235, 'password (check the App Password)');
+            $cmd("MAIL FROM:<$user>", 250);
+            $cmd("RCPT TO:<$to>", [250, 251]);
+            $cmd('DATA', 354);
+            $cmd(preg_replace('/^\./m', '..', $data) . "\r\n.", 250, 'message');
+            @fwrite($fp, "QUIT\r\n");
+            fclose($fp);
+            return true;
+        } catch (Exception $e) {
+            $last = "$addr: " . $e->getMessage();
+            @fclose($fp);
+        }
+    }
+    return $last;
+}
+
+$sent = false;
+if ($SMTP_PASS !== '') {
+    $data = implode("\r\n", [
+        'Date: ' . date('r'),
+        'From: ' . hdr('Travel Dervish Website') . " <$SMTP_USER>",
+        "To: <$TO>",
+        'Reply-To: ' . hdr($name) . " <$email>",
+        'Subject: ' . hdr($subject),
+        'Message-ID: <' . bin2hex(random_bytes(10)) . '@designdervish.com>',
+        'MIME-Version: 1.0',
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
+    ]) . "\r\n\r\n" . $encodedBody;
+    $r = smtp_send($SMTP_USER, $SMTP_PASS, $TO, $data);
+    if ($r === true) $sent = true; else logf('Gmail: ' . $r);
+} else {
+    logf('Gmail App Password not set in send-enquiry.php; trying the server mail() instead');
+}
+
+if (!$sent) {   // fallback: the server's own mail()
+    $headers  = 'From: ' . hdr('Travel Dervish Website') . " <$FROM>\r\n";
+    $headers .= 'Reply-To: ' . hdr($name) . " <$email>\r\n";
+    $headers .= "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64";
+    $sent = @mail($TO, hdr($subject), $encodedBody, $headers, '-f' . $FROM)
+         || @mail($TO, hdr($subject), $encodedBody, $headers);
+    if (!$sent) { $err = error_get_last(); logf('mail() failed' . ($err ? ': ' . $err['message'] : '')); }
+}
+
+back($sent ? 'thank-you' : $back);
